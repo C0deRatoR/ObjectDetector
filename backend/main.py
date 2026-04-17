@@ -3,9 +3,12 @@ main.py — FastAPI application with CORS, serving YOLOv8 object detection
 over REST endpoints for both static image uploads and live webcam frames.
 """
 
+from pathlib import Path
+
 from fastapi import FastAPI, File, UploadFile, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import time
 
@@ -30,6 +33,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Serve Frontend Static Files ─────────────────────────────────────────
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    """Redirect / to the frontend index.html."""
+    return RedirectResponse(url="/static/index.html")
+
 
 # Lazy-init detector on first request (avoids import-time download)
 _detector: ObjectDetector | None = None
