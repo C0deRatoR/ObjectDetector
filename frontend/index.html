@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>DetectArch — Real-Time Object Detection Dashboard</title>
+<meta name="description" content="Real-time YOLOv8-powered object detection dashboard with webcam streaming and image upload inference."/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "tertiary-fixed": "#d2d9f8",
+          "surface-container-lowest": "#ffffff",
+          "background": "#f7f9fb",
+          "on-tertiary-fixed": "#323951",
+          "secondary-dim": "#465468",
+          "tertiary-fixed-dim": "#c4cbe9",
+          "error-container": "#ff8b9a",
+          "on-error": "#fff7f7",
+          "on-primary-container": "#3f33d6",
+          "on-surface": "#2a3439",
+          "surface-container-highest": "#d9e4ea",
+          "surface": "#f7f9fb",
+          "on-primary": "#faf6ff",
+          "error-dim": "#4f0116",
+          "primary-fixed": "#e2dfff",
+          "on-tertiary": "#faf8ff",
+          "surface-container-low": "#f0f4f7",
+          "on-secondary": "#f8f8ff",
+          "on-error-container": "#782232",
+          "tertiary": "#575e78",
+          "secondary-fixed-dim": "#c7d5ed",
+          "inverse-primary": "#8582ff",
+          "primary": "#4d44e3",
+          "on-primary-fixed": "#2a13c5",
+          "surface-container-high": "#e1e9ee",
+          "inverse-surface": "#0b0f10",
+          "secondary-fixed": "#d5e3fc",
+          "on-surface-variant": "#566166",
+          "on-background": "#2a3439",
+          "on-secondary-fixed": "#324053",
+          "secondary": "#526074",
+          "surface-container": "#e8eff3",
+          "on-tertiary-fixed-variant": "#4e556f",
+          "primary-dim": "#4034d7",
+          "on-secondary-fixed-variant": "#4e5c71",
+          "error": "#9e3f4e",
+          "surface-variant": "#d9e4ea",
+          "primary-container": "#e2dfff",
+          "surface-tint": "#4d44e3",
+          "tertiary-container": "#d2d9f8",
+          "surface-bright": "#f7f9fb",
+          "secondary-container": "#d5e3fc",
+          "on-primary-fixed-variant": "#4a40e0",
+          "tertiary-dim": "#4b526c",
+          "outline-variant": "#a9b4b9",
+          "surface-dim": "#cfdce3",
+          "on-tertiary-container": "#444c65",
+          "on-secondary-container": "#455367",
+          "primary-fixed-dim": "#d2d0ff",
+          "outline": "#717c82",
+          "inverse-on-surface": "#9a9d9f"
+        },
+        borderRadius: {
+          DEFAULT: "0.125rem",
+          lg: "0.25rem",
+          xl: "0.5rem",
+          full: "0.75rem"
+        },
+        fontFamily: {
+          headline: ["Inter"],
+          body: ["Inter"],
+          label: ["Space Grotesk"]
+        }
+      },
+    },
+  }
+</script>
+<style>
+  body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; color: #2a3439; }
+  .font-mono { font-family: 'Space Grotesk', monospace; }
+  .glass-panel { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(169, 180, 185, 0.3); }
+  /* Loading bar at top — per DESIGN.md "Acknowledge Latency" rule */
+  #loading-bar { transition: width 0.3s ease; }
+  /* Hide native file input */
+  #image-upload-input { display: none; }
+  /* Custom toggle switch styling */
+  .toggle-checkbox:checked { right: 0; }
+  .toggle-checkbox { transition: right 0.2s ease-in-out; right: auto; }
+</style>
+</head>
+<body class="flex flex-col h-screen overflow-hidden bg-background text-on-background antialiased selection:bg-primary-container selection:text-on-primary-container">
+
+<!-- Top Loading Bar (DESIGN.md: indeterminate loading bar at top of surface) -->
+<div id="loading-bar-container" class="fixed top-0 left-0 w-full h-[2px] z-[100] bg-transparent hidden">
+  <div id="loading-bar" class="h-full bg-primary w-0"></div>
+</div>
+
+<!-- Top Navigation -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-4 h-12 bg-surface-container-lowest/90 backdrop-blur-md border-b border-surface-container-low shadow-sm transition-all duration-200">
+  <div class="flex items-center gap-6">
+    <div class="flex items-center gap-2">
+      <span class="material-symbols-outlined text-primary font-bold">radar</span>
+      <span class="text-lg font-bold tracking-tighter text-on-surface font-headline">DetectArch</span>
+    </div>
+    <nav class="hidden md:flex gap-6">
+      <a id="nav-dashboard" class="text-on-surface hover:text-primary transition-colors font-headline text-sm font-semibold flex items-center h-12 border-b-2 border-primary" href="#">Dashboard</a>
+      <a id="nav-upload" class="text-on-surface-variant hover:text-on-surface transition-colors font-headline text-sm font-semibold flex items-center h-12" href="#">Upload</a>
+      <a id="nav-models" class="text-on-surface-variant hover:text-on-surface transition-colors font-headline text-sm font-semibold flex items-center h-12" href="#">Models</a>
+    </nav>
+  </div>
+  <div class="flex items-center gap-4">
+    <div id="api-status" class="hidden md:flex items-center gap-2 bg-surface-container-low px-3 py-1 rounded border border-surface-container">
+      <div id="api-status-dot" class="w-2 h-2 rounded-full bg-on-surface-variant"></div>
+      <span id="api-status-text" class="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest">Connecting…</span>
+    </div>
+    <button class="p-1 hover:text-on-surface transition-colors rounded-full hover:bg-surface-container-low text-on-surface-variant">
+      <span class="material-symbols-outlined text-[20px]">settings</span>
+    </button>
+  </div>
+</header>
+
+<!-- Side Navigation & Main Layout -->
+<div class="flex flex-1 pt-12 h-full">
+
+  <!-- Sidebar -->
+  <aside class="fixed left-0 top-12 h-[calc(100vh-3rem)] w-64 bg-surface-container-low flex flex-col justify-between border-r border-surface-container shadow-inner z-40 transition-transform duration-300 transform md:translate-x-0 -translate-x-full">
+    <div class="p-4 flex flex-col gap-6">
+      <!-- Status Header -->
+      <div class="flex items-center gap-3 p-3 bg-surface-container-lowest rounded border border-surface-container shadow-sm">
+        <div class="relative">
+          <div class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-bold font-mono text-sm">
+            <span class="material-symbols-outlined text-[18px]">router</span>
+          </div>
+          <div id="sidebar-status-dot" class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-on-surface-variant border-2 border-surface-container-lowest rounded-full"></div>
+        </div>
+        <div>
+          <h3 class="font-headline font-bold text-sm text-on-surface leading-tight">Local_Node</h3>
+          <p id="sidebar-status-label" class="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest mt-0.5">Status: Connecting</p>
+        </div>
+      </div>
+
+      <!-- Nav Links -->
+      <nav class="flex flex-col gap-1">
+        <a id="side-camera" class="flex items-center gap-3 px-3 py-2 rounded bg-surface-container-lowest text-primary font-bold shadow-sm border border-surface-container transition-colors font-headline text-sm" href="#">
+          <span class="material-symbols-outlined text-[18px]">videocam</span>
+          Camera Feed
+        </a>
+        <a id="side-upload" class="flex items-center gap-3 px-3 py-2 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-headline text-sm font-semibold" href="#">
+          <span class="material-symbols-outlined text-[18px]">upload_file</span>
+          Image Upload
+        </a>
+        <a id="side-analytics" class="flex items-center gap-3 px-3 py-2 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-headline text-sm font-semibold" href="#">
+          <span class="material-symbols-outlined text-[18px]">analytics</span>
+          Analytics
+        </a>
+        <a class="flex items-center gap-3 px-3 py-2 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-headline text-sm font-semibold" href="#">
+          <span class="material-symbols-outlined text-[18px]">database</span>
+          Inference Cache
+        </a>
+        <a class="flex items-center gap-3 px-3 py-2 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-headline text-sm font-semibold" href="#">
+          <span class="material-symbols-outlined text-[18px]">settings</span>
+          Settings
+        </a>
+      </nav>
+    </div>
+    <div class="p-4 border-t border-surface-container flex flex-col gap-2">
+      <a class="flex items-center gap-3 px-3 py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-mono text-[11px] uppercase tracking-wider" href="#">
+        <span class="material-symbols-outlined text-[16px]">help</span>
+        Documentation
+      </a>
+      <a class="flex items-center gap-3 px-3 py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-mono text-[11px] uppercase tracking-wider" href="https://github.com" target="_blank">
+        <span class="material-symbols-outlined text-[16px]">code</span>
+        GitHub Repo
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main Content Area -->
+  <main class="flex-1 ml-0 md:ml-64 p-4 h-full overflow-y-auto bg-background">
+    <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 h-full pb-8">
+
+      <!-- LEFT COLUMN: Health & Classes -->
+      <div class="xl:col-span-3 flex flex-col gap-4">
+
+        <!-- System Health Bento -->
+        <div class="bg-surface-container-lowest border border-outline-variant/30 rounded p-4 shadow-sm flex flex-col gap-3">
+          <div class="flex justify-between items-center border-b border-surface-container pb-2 mb-1">
+            <h2 class="font-headline font-bold text-sm text-on-surface tracking-tight uppercase">System Health</h2>
+            <span class="material-symbols-outlined text-primary text-[18px]">speed</span>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-surface p-2 rounded border border-surface-container-low flex flex-col items-center justify-center">
+              <span class="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest mb-1">Inference</span>
+              <span id="stat-inference-ms" class="font-mono font-bold text-lg text-on-surface">— ms</span>
+              <div class="w-full bg-surface-container-high h-1 mt-1 rounded-full overflow-hidden"><div id="bar-inference" class="bg-primary h-full w-0 transition-all duration-300"></div></div>
+            </div>
+            <div class="bg-surface p-2 rounded border border-surface-container-low flex flex-col items-center justify-center">
+              <span class="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest mb-1">FPS</span>
+              <span id="stat-fps" class="font-mono font-bold text-lg text-on-surface">0</span>
+              <div class="w-full bg-surface-container-high h-1 mt-1 rounded-full overflow-hidden"><div id="bar-fps" class="bg-tertiary h-full w-0 transition-all duration-300"></div></div>
+            </div>
+            <div class="bg-surface p-2 rounded border border-surface-container-low flex flex-col items-center justify-center col-span-2">
+              <span class="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest mb-1">Objects Detected</span>
+              <span id="stat-total-objects" class="font-mono font-bold text-sm text-on-surface">0 total this session</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detected Classes Filter List -->
+        <div class="bg-surface-container-lowest border border-outline-variant/30 rounded shadow-sm flex-1 flex flex-col min-h-[250px]">
+          <div class="p-3 border-b border-surface-container bg-surface-container-low/50 flex justify-between items-center rounded-t">
+            <h2 class="font-headline font-bold text-sm text-on-surface tracking-tight uppercase">Class Filter</h2>
+            <span id="class-filter-count" class="font-mono text-[10px] bg-primary-container text-on-primary-container px-2 py-0.5 rounded font-bold">0 ACTIVE</span>
+          </div>
+          <div id="class-filter-list" class="p-2 overflow-y-auto flex-1 flex flex-col gap-1">
+            <!-- Dynamically populated from /classes -->
+            <div class="flex items-center justify-center h-full text-on-surface-variant font-mono text-xs">Loading classes…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CENTER: Main Camera Feed / Upload Zone -->
+      <div class="xl:col-span-6 flex flex-col h-[500px] xl:h-auto border border-outline-variant/30 rounded bg-inverse-surface shadow-md relative overflow-hidden group">
+
+        <!-- Overlay Header -->
+        <div class="absolute top-0 left-0 w-full p-4 flex justify-between items-start z-10 bg-gradient-to-b from-inverse-surface/80 to-transparent pointer-events-none">
+          <div class="flex gap-2 items-center glass-panel px-3 py-1.5 rounded bg-surface-container-lowest/10 border-outline-variant/20">
+            <span id="live-dot" class="w-2.5 h-2.5 bg-on-surface-variant rounded-full"></span>
+            <span id="live-label" class="font-mono text-xs font-bold text-white tracking-widest">IDLE</span>
+          </div>
+          <div class="flex flex-col items-end gap-1 pointer-events-auto">
+            <button id="btn-fullscreen" class="bg-surface-container-lowest/10 hover:bg-surface-container-lowest/20 backdrop-blur-md border border-outline-variant/30 text-white p-1.5 rounded transition-colors" title="Expand view">
+              <span class="material-symbols-outlined text-[18px]">open_in_full</span>
+            </button>
+            <button id="btn-snapshot" class="bg-surface-container-lowest/10 hover:bg-surface-container-lowest/20 backdrop-blur-md border border-outline-variant/30 text-white p-1.5 rounded transition-colors" title="Snapshot">
+              <span class="material-symbols-outlined text-[18px]">photo_camera</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Video / Image Feed -->
+        <div class="relative w-full h-full bg-surface-container-high overflow-hidden flex items-center justify-center">
+          <!-- Webcam video (hidden until started) -->
+          <video id="webcam-video" class="w-full h-full object-cover hidden" autoplay muted playsinline></video>
+          <!-- Annotated result canvas -->
+          <canvas id="result-canvas" class="w-full h-full object-contain hidden"></canvas>
+          <!-- Upload drop zone / idle state -->
+          <div id="idle-zone" class="flex flex-col items-center justify-center gap-4 p-8">
+            <span class="material-symbols-outlined text-[64px] text-on-surface-variant/40">center_focus_strong</span>
+            <p class="font-headline font-bold text-on-surface-variant/60 text-sm text-center">Start Webcam or Upload an Image<br/><span class="font-mono text-[10px] text-on-surface-variant/40 uppercase tracking-widest">Use the controls below</span></p>
+          </div>
+        </div>
+
+        <!-- Overlay Footer -->
+        <div class="absolute bottom-0 left-0 w-full p-3 flex justify-between items-center z-10 bg-gradient-to-t from-inverse-surface/90 to-transparent">
+          <div class="flex gap-4">
+            <div class="flex flex-col">
+              <span class="font-mono text-[9px] text-surface-variant uppercase tracking-widest">Resolution</span>
+              <span id="stat-resolution" class="font-mono text-xs font-bold text-white">—</span>
+            </div>
+            <div class="flex flex-col">
+              <span class="font-mono text-[9px] text-surface-variant uppercase tracking-widest">FPS</span>
+              <span id="stat-fps-overlay" class="font-mono text-xs font-bold text-emerald-400">—</span>
+            </div>
+          </div>
+          <div class="font-mono text-xs text-white opacity-70">
+            Model: <span id="stat-model-name">YOLOv8_nano</span>
+          </div>
+        </div>
+
+        <!-- Controls strip at very bottom -->
+        <div class="absolute bottom-14 left-1/2 -translate-x-1/2 z-20 flex gap-2 pointer-events-auto">
+          <button id="btn-webcam-toggle" class="bg-primary hover:bg-primary-dim text-on-primary font-headline text-xs font-semibold py-2 px-4 rounded transition-colors shadow-sm active:scale-95 duration-75 flex items-center gap-2">
+            <span class="material-symbols-outlined text-[16px]">videocam</span> Start Webcam
+          </button>
+          <button id="btn-upload" class="bg-secondary hover:bg-secondary-dim text-on-secondary font-headline text-xs font-semibold py-2 px-4 rounded transition-colors shadow-sm active:scale-95 duration-75 flex items-center gap-2">
+            <span class="material-symbols-outlined text-[16px]">upload_file</span> Upload Image
+          </button>
+          <input type="file" id="image-upload-input" accept="image/jpeg,image/png,image/webp"/>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN: Analytics & Parameters -->
+      <div class="xl:col-span-3 flex flex-col gap-4">
+
+        <!-- Inference Analytics -->
+        <div class="bg-surface-container-lowest border border-outline-variant/30 rounded shadow-sm flex flex-col">
+          <div class="p-3 border-b border-surface-container bg-surface-container-low/50 rounded-t">
+            <h2 class="font-headline font-bold text-sm text-on-surface tracking-tight uppercase">Inference Analytics</h2>
+          </div>
+          <div class="p-4 flex flex-col gap-4">
+            <div>
+              <div class="flex justify-between items-end mb-1">
+                <span class="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest">Latency History (ms)</span>
+                <span id="analytics-avg-latency" class="font-mono font-bold text-sm text-primary">— ms</span>
+              </div>
+              <!-- Latency bar chart -->
+              <div id="latency-chart" class="h-16 w-full flex items-end gap-[2px] bg-surface-container p-1 rounded border border-surface-container-low">
+                <!-- Bars populated by JS -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Detections Log -->
+        <div class="bg-surface-container-lowest border border-outline-variant/30 rounded shadow-sm flex-1 flex flex-col min-h-[200px]">
+          <div class="p-3 border-b border-surface-container bg-surface-container-low/50 flex justify-between items-center rounded-t">
+            <h2 class="font-headline font-bold text-sm text-on-surface tracking-tight uppercase">Recent Detections</h2>
+            <button id="btn-clear-log" class="text-on-surface-variant hover:text-error transition-colors font-mono text-[9px] uppercase font-bold tracking-widest flex items-center gap-1">
+              <span class="material-symbols-outlined text-[12px]">delete</span> Clear
+            </button>
+          </div>
+          <div class="flex-1 overflow-y-auto p-1">
+            <table class="w-full text-left border-collapse">
+              <thead class="bg-surface sticky top-0 z-10 border-b border-surface-container">
+                <tr>
+                  <th class="font-mono text-[9px] text-on-surface-variant uppercase tracking-widest p-2">Time</th>
+                  <th class="font-mono text-[9px] text-on-surface-variant uppercase tracking-widest p-2">Class</th>
+                  <th class="font-mono text-[9px] text-on-surface-variant uppercase tracking-widest p-2 text-right">Conf</th>
+                </tr>
+              </thead>
+              <tbody id="detections-log" class="font-mono text-[11px]">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Model Parameters -->
+        <div class="bg-surface-container-lowest border border-outline-variant/30 rounded shadow-sm p-4">
+          <h2 class="font-headline font-bold text-sm text-on-surface tracking-tight uppercase border-b border-surface-container pb-2 mb-4">Parameters</h2>
+          <div class="flex flex-col gap-4">
+            <div>
+              <label class="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest block mb-1">Active Model</label>
+              <select id="select-model" class="w-full bg-surface border border-outline-variant/50 text-on-surface font-mono text-xs rounded p-2 focus:ring-1 focus:ring-primary focus:border-primary outline-none">
+                <option value="yolov8n.pt">YOLOv8_nano</option>
+                <option value="yolov8s.pt">YOLOv8_small</option>
+                <option value="yolov8m.pt">YOLOv8_medium</option>
+              </select>
+            </div>
+            <div>
+              <div class="flex justify-between items-center mb-1">
+                <label class="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest">Confidence Threshold</label>
+                <span id="conf-value" class="font-mono text-xs font-bold text-on-surface">0.50</span>
+              </div>
+              <input id="conf-slider" class="w-full h-1 bg-surface-container-high rounded-lg appearance-none cursor-pointer accent-primary" max="95" min="10" type="range" value="50"/>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
